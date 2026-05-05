@@ -1,5 +1,5 @@
 [build]
-  command = "npm install && npx vite build"
+  npm ci --include=dev && npm run build
   publish = "dist"
 
 [[redirects]]
