@@ -35,11 +35,7 @@ export default function Auth({ onSignIn }) {
     const { data, error: err } = await supabase.auth.signUp({ email, password });
     setLoading(false);
     if (err) { setError(err.message); return; }
-    if (data.user && !data.session) {
-      setMessage('Check your email for a confirmation link. Once confirmed, come back and sign in.');
-      setMode('login');
-    } else if (data.session) {
-      onSignIn(data.session);
+   if (data.session) {
     }
   };
 
