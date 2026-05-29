@@ -22,7 +22,6 @@ const KEY = 'rh_book1_v2';
 const loadLocal = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
 const saveLocal = (d) => localStorage.setItem(KEY, JSON.stringify(d));
 
-// Cloud sync — debounced write to Supabase
 async function saveCloud(userId, data) {
   if (!supabase || !userId) return;
   const { error } = await supabase.from('user_progress').upsert(
@@ -40,7 +39,6 @@ async function loadCloud(userId) {
   return data?.data || null;
 }
 
-// Merge: cloud wins for completed days, keep whichever entry is longer for text fields
 function mergeData(local, cloud) {
   if (!cloud) return local;
   if (!local || Object.keys(local).length === 0) return cloud;
@@ -195,7 +193,7 @@ function Tabs({ tabs, active, onChange }) {
   );
 }
 
-/* ── Render paragraphs with block quotes ── */
+/* ── Render paragraphs ── */
 function TeachingText({ text }) {
   const paragraphs = text.split('\n\n');
   return paragraphs.map((p, i) => {
@@ -222,17 +220,13 @@ function TeachingPage({ day }) {
   const example = day.example;
   return (
     <div style={{ padding: '32px 24px 40px' }}>
-      {/* Day number + title */}
       <div style={{ marginBottom: 8 }}>
         <span style={{ fontFamily: F.heading, fontSize: 60, fontWeight: 700, color: `${T.navy}12`, lineHeight: 1, display: 'block' }}>{day.day_number}</span>
         <h2 style={{ fontFamily: F.heading, fontSize: 26, fontWeight: 700, color: T.textDark, margin: '-8px 0 4px', lineHeight: 1.3 }}>{day.day_title}</h2>
         <div style={{ height: 2, width: 56, background: T.gold, marginBottom: 24 }} />
       </div>
-
       <SectionLabel>What Is Actually Happening</SectionLabel>
       <TeachingText text={day.teaching_text} />
-
-      {/* Go Deeper: Why + Example */}
       {ext && (
         <GoDeeper title="Go Deeper — Why This Matters">
           <Body style={{ marginTop: 16 }}>{ext}</Body>
@@ -246,7 +240,6 @@ function TeachingPage({ day }) {
           )}
         </GoDeeper>
       )}
-
       <Divider />
       <NavyCard label="Today's Reminder">{day.todays_reminder}</NavyCard>
     </div>
@@ -257,24 +250,18 @@ function TeachingPage({ day }) {
 function ReflectPage({ day, entries, onUpdate }) {
   let deeperPrompts = [];
   try { deeperPrompts = JSON.parse(day.deeper_prompts || '[]'); } catch {}
-
   return (
     <div style={{ padding: '32px 24px 40px' }}>
       <PermissionMarker text={day.todays_note} />
-
       <ReflectLabel>Notice</ReflectLabel>
       <Prompt>{day.reflect_notice}</Prompt>
       <TextArea value={entries.notice || ''} onChange={v => onUpdate({ ...entries, notice: v })} />
-
       <ReflectLabel>Look Closer</ReflectLabel>
       <Prompt>{day.reflect_look_closer}</Prompt>
       <TextArea value={entries.closer || ''} onChange={v => onUpdate({ ...entries, closer: v })} />
-
       <ReflectLabel>Connect</ReflectLabel>
       <Prompt>{day.reflect_connect}</Prompt>
       <TextArea value={entries.connect || ''} onChange={v => onUpdate({ ...entries, connect: v })} />
-
-      {/* Go Deeper: Additional prompts */}
       {deeperPrompts.length > 0 && (
         <GoDeeper title="Go Deeper — More Prompts">
           <p style={{ fontFamily: F.label, fontSize: 12, color: T.textLight, margin: '16px 0 16px', fontStyle: 'italic' }}>
@@ -283,10 +270,7 @@ function ReflectPage({ day, entries, onUpdate }) {
           {deeperPrompts.map((prompt, i) => (
             <div key={i} style={{ marginBottom: 16 }}>
               <Prompt>{prompt}</Prompt>
-              <TextArea
-                value={entries[`deeper_${i}`] || ''} onChange={v => onUpdate({ ...entries, [`deeper_${i}`]: v })}
-                rows={3} placeholder="Optional..."
-              />
+              <TextArea value={entries[`deeper_${i}`] || ''} onChange={v => onUpdate({ ...entries, [`deeper_${i}`]: v })} rows={3} placeholder="Optional..." />
             </div>
           ))}
         </GoDeeper>
@@ -304,31 +288,23 @@ function PracticePage({ day, entries, onUpdate }) {
   const micros = [{ k: 'm1', l: day.micro_win_1 }, { k: 'm2', l: day.micro_win_2 }, { k: 'm3', l: day.micro_win_3 }];
   const toggle = (k) => onUpdate({ ...entries, [k]: !entries[k] });
   const tryThis = day.try_this;
-
   return (
     <div style={{ padding: '32px 24px 40px' }}>
-      {/* Practice */}
       <div style={{ background: T.creamDark, borderRadius: 8, padding: '18px 20px', marginBottom: 20 }}>
         <span style={{ fontFamily: F.label, fontSize: 10, fontWeight: 700, letterSpacing: 2.5, color: T.goldMuted, textTransform: 'uppercase' }}>Today's Practice</span>
         <p style={{ fontFamily: F.body, fontSize: 15.5, color: T.textDark, margin: '10px 0 0', lineHeight: 1.65 }}>{day.todays_practice}</p>
       </div>
-
-      {/* Go Deeper: Try This */}
       {tryThis && (
         <GoDeeper title="Go Deeper — Try This Instead (or Also)">
           <Body style={{ marginTop: 16, fontSize: 15 }}>{tryThis}</Body>
           <TextArea value={entries.try_this || ''} onChange={v => onUpdate({ ...entries, try_this: v })} placeholder="Notes from this exercise..." rows={3} />
         </GoDeeper>
       )}
-
-      {/* One Thing Learned */}
       <div style={{ background: T.creamDark, borderRadius: 8, padding: '18px 20px', marginBottom: 24 }}>
         <span style={{ fontFamily: F.label, fontSize: 10, fontWeight: 700, letterSpacing: 2.5, color: T.goldMuted, textTransform: 'uppercase' }}>One Thing I Learned Today</span>
         <p style={{ fontFamily: F.label, fontSize: 12, fontStyle: 'italic', color: T.textLight, margin: '6px 0 10px' }}>Not what I did — what I discovered about myself.</p>
         <TextArea value={entries.learned || ''} onChange={v => onUpdate({ ...entries, learned: v })} placeholder="What I discovered..." rows={3} />
       </div>
-
-      {/* Micro-wins + Today I Feel side by side */}
       <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 24 }}>
         <div style={{ flex: '1 1 220px' }}>
           <span style={{ fontFamily: F.label, fontSize: 11, fontWeight: 700, letterSpacing: 2, color: T.navy, textTransform: 'uppercase', display: 'block', marginBottom: 12 }}>Micro-Win Checklist</span>
@@ -339,7 +315,6 @@ function PracticePage({ day, entries, onUpdate }) {
           {feels.map(f => <Check key={f.k} label={f.l} checked={!!entries[f.k]} onChange={() => toggle(f.k)} />)}
         </div>
       </div>
-
       <NavyCard label="Looking Ahead">{day.looking_ahead}</NavyCard>
     </div>
   );
@@ -350,12 +325,10 @@ function DayView({ dayNum, userData, setUserData, onHome, onNav }) {
   const [tab, setTab] = useState(0);
   const day = days.find(d => parseInt(d.day_number) === dayNum);
   if (!day) return null;
-
   const dk = `day_${dayNum}`;
   const entries = userData[dk] || {};
   const update = (u) => { const n = { ...userData, [dk]: u }; setUserData(n); };
   const markDone = () => { const n = { ...userData, [dk]: { ...entries, completed: true }, lastDay: dayNum }; setUserData(n); };
-
   return (
     <div>
       <Header left={`Week ${day.week_number} · ${day.week_theme}`} right={`Day ${day.day_number}`} onHome={onHome} />
@@ -365,7 +338,6 @@ function DayView({ dayNum, userData, setUserData, onHome, onNav }) {
         {tab === 1 && <ReflectPage day={day} entries={entries} onUpdate={update} />}
         {tab === 2 && <PracticePage day={day} entries={entries} onUpdate={update} />}
       </div>
-      {/* Bottom nav */}
       <div style={{ maxWidth: 680, margin: '0 auto', padding: '0 24px 48px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
         <div style={{ display: 'flex', gap: 8 }}>
           <Btn variant="secondary" disabled={dayNum <= 1} onClick={() => { onNav(dayNum - 1); setTab(0); }}>← Day {dayNum - 1}</Btn>
@@ -386,10 +358,8 @@ function HomeView({ userData, onSelect, user, onSignOut }) {
   const done = Array.from({ length: 30 }, (_, i) => userData[`day_${i + 1}`]?.completed).filter(Boolean).length;
   const pct = Math.round((done / 30) * 100);
   const wks = [{ t: 'SEE IT', s: 'Awareness', r: [1,7] }, { t: 'FEEL IT', s: 'Origin', r: [8,14] }, { t: 'SHIFT IT', s: 'Interruption', r: [15,21] }, { t: 'LIVE IT', s: 'Identity', r: [22,30] }];
-
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '48px 24px 60px' }}>
-      {/* Title */}
       <div style={{ textAlign: 'center', marginBottom: 40 }}>
         <div style={{ display: 'inline-block', background: T.navy, padding: '5px 16px', borderRadius: 20, marginBottom: 16 }}>
           <span style={{ fontFamily: F.label, fontSize: 10, fontWeight: 700, letterSpacing: 3, color: T.gold, textTransform: 'uppercase' }}>30-Day System</span>
@@ -397,8 +367,6 @@ function HomeView({ userData, onSelect, user, onSignOut }) {
         <h1 style={{ fontFamily: F.heading, fontSize: 30, fontWeight: 700, color: T.navy, margin: '0 0 6px', lineHeight: 1.2 }}>Stop Being<br/>Emotionally Reactive</h1>
         <p style={{ fontFamily: F.label, fontSize: 13, color: T.textMid, margin: 0 }}>Understand Your Triggers. Stop Automatic Reactions.</p>
       </div>
-
-      {/* Progress */}
       <div style={{ background: T.white, borderRadius: 12, padding: 24, marginBottom: 36, boxShadow: '0 2px 16px rgba(30,58,95,0.06)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
           <span style={{ fontFamily: F.label, fontSize: 13, fontWeight: 600, color: T.navy }}>Your Progress</span>
@@ -409,8 +377,6 @@ function HomeView({ userData, onSelect, user, onSignOut }) {
         </div>
         <p style={{ fontFamily: F.label, fontSize: 12, color: T.textLight, margin: '8px 0 0' }}>{done} of 30 days completed</p>
       </div>
-
-      {/* Weeks */}
       {wks.map((wk, wi) => {
         const [start, end] = wk.r;
         const weekDone = Array.from({ length: end - start + 1 }, (_, i) => userData[`day_${start + i}`]?.completed).filter(Boolean).length;
@@ -449,7 +415,6 @@ function HomeView({ userData, onSelect, user, onSignOut }) {
           </div>
         );
       })}
-
       <div style={{ textAlign: 'center', marginTop: 40, paddingTop: 24, borderTop: `1px solid ${T.warmGray}20` }}>
         {user ? (
           <>
@@ -477,13 +442,14 @@ function HomeView({ userData, onSelect, user, onSignOut }) {
 
 /* ── App ── */
 export default function App() {
-  const [session, setSession] = useState(undefined); // undefined = loading, null = no session
-  const [access, setAccess] = useState(undefined); // undefined = checking, true/false = known
+  const [session, setSession] = useState(undefined);
+  const [access, setAccess] = useState(undefined);
   const [userData, setUserData] = useState(loadLocal);
   const [view, setView] = useState('home');
   const [currentDay, setCurrentDay] = useState(1);
   const [syncing, setSyncing] = useState(false);
   const saveTimer = useRef(null);
+  const checkIntervalRef = useRef(null);
 
   // Check for existing session on mount
   useEffect(() => {
@@ -497,7 +463,6 @@ export default function App() {
   useEffect(() => {
     if (!session?.user?.id) { setAccess(null); return; }
 
-    // Check access
     fetch('/.netlify/functions/check-access', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -507,7 +472,6 @@ export default function App() {
       .then(d => setAccess(d.hasAccess))
       .catch(() => setAccess(false));
 
-    // Load cloud data
     setSyncing(true);
     loadCloud(session.user.id).then(cloudData => {
       if (cloudData) {
@@ -519,17 +483,15 @@ export default function App() {
     });
   }, [session?.user?.id]);
 
-  // Check for Stripe success redirect
-// Check for Stripe success redirect
+  // Check for Stripe success redirect — retry until webhook processes
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('session_id')) {
       setAccess('processing');
       window.history.replaceState({}, '', '/');
 
-      // Retry checking access — webhook may take a few seconds
       let attempts = 0;
-      const checkInterval = setInterval(async () => {
+      checkIntervalRef.current = setInterval(async () => {
         attempts++;
         if (!session?.user?.id) return;
         try {
@@ -540,21 +502,21 @@ export default function App() {
           });
           const d = await res.json();
           if (d.hasAccess) {
-            clearInterval(checkInterval);
+            clearInterval(checkIntervalRef.current);
             setAccess(true);
           } else if (attempts >= 10) {
-            clearInterval(checkInterval);
-            setAccess(true); // Let them in after 10 tries — fix manually if needed
+            clearInterval(checkIntervalRef.current);
+            setAccess(true); // Let them in after 30 seconds — handle manually if needed
           }
         } catch {
-          if (attempts >= 10) clearInterval(checkInterval);
+          if (attempts >= 10) clearInterval(checkIntervalRef.current);
         }
       }, 3000);
 
-      return () => clearInterval(checkInterval);
+      return () => { if (checkIntervalRef.current) clearInterval(checkIntervalRef.current); };
     }
   }, [session?.user?.id]);
-  
+
   // Save with debounced cloud sync
   const saveData = useCallback((next) => {
     setUserData(next);
@@ -572,18 +534,23 @@ export default function App() {
     setSession(null);
     setAccess(null);
   };
-  const handleSignIn = (s) => {
-    setSession(s);
-  };
+  const handleSignIn = (s) => { setSession(s); };
 
-  // Loading
-  if (session === undefined || (session && access === undefined)) {
+  // Loading or processing payment
+  if (session === undefined || (session && access === undefined) || access === 'processing') {
     return (
-      <div style={{ minHeight: '100vh', background: T.cream, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p style={{ fontFamily: F.label, fontSize: 14, color: T.textMid }}>Loading...</p>
+      <div style={{ minHeight: '100vh', background: T.cream, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 24 }}>
+        <div>
+          {access === 'processing' && <div style={{ fontSize: 32, marginBottom: 16 }}>✓</div>}
+          <h2 style={{ fontFamily: F.heading, fontSize: 24, color: T.navy, margin: '0 0 8px' }}>
+            {access === 'processing' ? 'Setting up your access...' : 'Loading...'}
+          </h2>
+          {access === 'processing' && (
+            <p style={{ fontFamily: F.label, fontSize: 13, color: T.textMid }}>This takes a few seconds. Do not close this page.</p>
+          )}
+        </div>
       </div>
     );
-  }
   }
 
   // Not signed in
@@ -619,4 +586,4 @@ export default function App() {
       {view === 'day' && <DayView dayNum={currentDay} userData={userData} setUserData={saveData} onHome={goHome} onNav={openDay} />}
     </div>
   );
-
+}
