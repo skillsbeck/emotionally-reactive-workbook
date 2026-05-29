@@ -36,6 +36,7 @@ export default function Auth({ onSignIn }) {
     setLoading(false);
     if (err) { setError(err.message); return; }
    if (data.session) {
+      onSignIn(data.session);
     }
   };
 
