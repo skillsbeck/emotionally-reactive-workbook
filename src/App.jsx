@@ -520,26 +520,41 @@ export default function App() {
   }, [session?.user?.id]);
 
   // Check for Stripe success redirect
+// Check for Stripe success redirect
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('session_id')) {
-      // Payment just completed — recheck access after a short delay
-      setTimeout(() => {
-        if (session?.user?.id) {
-          fetch('/.netlify/functions/check-access', {
+      setAccess('processing');
+      window.history.replaceState({}, '', '/');
+
+      // Retry checking access — webhook may take a few seconds
+      let attempts = 0;
+      const checkInterval = setInterval(async () => {
+        attempts++;
+        if (!session?.user?.id) return;
+        try {
+          const res = await fetch('/.netlify/functions/check-access', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId: session.user.id }),
-          })
-            .then(r => r.json())
-            .then(d => setAccess(d.hasAccess));
+          });
+          const d = await res.json();
+          if (d.hasAccess) {
+            clearInterval(checkInterval);
+            setAccess(true);
+          } else if (attempts >= 10) {
+            clearInterval(checkInterval);
+            setAccess(true); // Let them in after 10 tries — fix manually if needed
+          }
+        } catch {
+          if (attempts >= 10) clearInterval(checkInterval);
         }
-      }, 2000);
-      // Clean the URL
-      window.history.replaceState({}, '', '/');
+      }, 3000);
+
+      return () => clearInterval(checkInterval);
     }
   }, [session?.user?.id]);
-
+  
   // Save with debounced cloud sync
   const saveData = useCallback((next) => {
     setUserData(next);
@@ -568,6 +583,7 @@ export default function App() {
         <p style={{ fontFamily: F.label, fontSize: 14, color: T.textMid }}>Loading...</p>
       </div>
     );
+  }
   }
 
   // Not signed in
@@ -603,4 +619,4 @@ export default function App() {
       {view === 'day' && <DayView dayNum={currentDay} userData={userData} setUserData={saveData} onHome={goHome} onNav={openDay} />}
     </div>
   );
-}
+
