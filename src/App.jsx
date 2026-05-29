@@ -1,5 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { days, weeks } from './data';
+import { supabase } from './supabase';
+import Auth from './Auth';
+import Paywall from './Paywall';
 
 /* ── Theme ── */
 const T = {
@@ -16,8 +19,46 @@ const F = {
 
 /* ── Storage ── */
 const KEY = 'rh_book1_v2';
-const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
-const save = (d) => localStorage.setItem(KEY, JSON.stringify(d));
+const loadLocal = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
+const saveLocal = (d) => localStorage.setItem(KEY, JSON.stringify(d));
+
+// Cloud sync — debounced write to Supabase
+async function saveCloud(userId, data) {
+  if (!supabase || !userId) return;
+  const { error } = await supabase.from('user_progress').upsert(
+    { user_id: userId, data, updated_at: new Date().toISOString() },
+    { onConflict: 'user_id' }
+  );
+  if (error) console.warn('Cloud save failed:', error.message);
+}
+
+async function loadCloud(userId) {
+  if (!supabase || !userId) return null;
+  const { data, error } = await supabase.from('user_progress')
+    .select('data').eq('user_id', userId).single();
+  if (error) { if (error.code !== 'PGRST116') console.warn('Cloud load failed:', error.message); return null; }
+  return data?.data || null;
+}
+
+// Merge: cloud wins for completed days, keep whichever entry is longer for text fields
+function mergeData(local, cloud) {
+  if (!cloud) return local;
+  if (!local || Object.keys(local).length === 0) return cloud;
+  const merged = { ...local };
+  for (const key of Object.keys(cloud)) {
+    if (!merged[key]) { merged[key] = cloud[key]; continue; }
+    if (typeof cloud[key] === 'object' && typeof merged[key] === 'object') {
+      merged[key] = { ...merged[key] };
+      for (const field of Object.keys(cloud[key])) {
+        const cv = cloud[key][field]; const lv = merged[key][field];
+        if (cv === true) merged[key][field] = true;
+        else if (typeof cv === 'string' && typeof lv === 'string') merged[key][field] = cv.length >= lv.length ? cv : lv;
+        else if (cv && !lv) merged[key][field] = cv;
+      }
+    }
+  }
+  return merged;
+}
 
 /* ── Shared Components ── */
 function Header({ left, right, onHome }) {
@@ -312,8 +353,8 @@ function DayView({ dayNum, userData, setUserData, onHome, onNav }) {
 
   const dk = `day_${dayNum}`;
   const entries = userData[dk] || {};
-  const update = (u) => { const n = { ...userData, [dk]: u }; setUserData(n); save(n); };
-  const markDone = () => { const n = { ...userData, [dk]: { ...entries, completed: true }, lastDay: dayNum }; setUserData(n); save(n); };
+  const update = (u) => { const n = { ...userData, [dk]: u }; setUserData(n); };
+  const markDone = () => { const n = { ...userData, [dk]: { ...entries, completed: true }, lastDay: dayNum }; setUserData(n); };
 
   return (
     <div>
@@ -341,7 +382,7 @@ function DayView({ dayNum, userData, setUserData, onHome, onNav }) {
 }
 
 /* ── Home ── */
-function HomeView({ userData, onSelect }) {
+function HomeView({ userData, onSelect, user, onSignOut }) {
   const done = Array.from({ length: 30 }, (_, i) => userData[`day_${i + 1}`]?.completed).filter(Boolean).length;
   const pct = Math.round((done / 30) * 100);
   const wks = [{ t: 'SEE IT', s: 'Awareness', r: [1,7] }, { t: 'FEEL IT', s: 'Origin', r: [8,14] }, { t: 'SHIFT IT', s: 'Interruption', r: [15,21] }, { t: 'LIVE IT', s: 'Identity', r: [22,30] }];
@@ -410,10 +451,24 @@ function HomeView({ userData, onSelect }) {
       })}
 
       <div style={{ textAlign: 'center', marginTop: 40, paddingTop: 24, borderTop: `1px solid ${T.warmGray}20` }}>
-        <p style={{ fontFamily: F.label, fontSize: 11, color: T.textLight, margin: '0 0 8px' }}>All entries are saved in your browser. Nothing is sent to a server.</p>
-        <button onClick={() => { if (confirm('This will clear all your entries and progress. This cannot be undone. Are you sure?')) { localStorage.removeItem(KEY); window.location.reload(); } }}
+        {user ? (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8 }}>
+              <div style={{ width: 8, height: 8, borderRadius: 4, background: '#5a9a6a' }} />
+              <span style={{ fontFamily: F.label, fontSize: 11, color: T.textMid }}>Signed in as {user.email}</span>
+            </div>
+            <p style={{ fontFamily: F.label, fontSize: 11, color: T.textLight, margin: '0 0 8px' }}>Your progress saves automatically across all your devices.</p>
+            <button onClick={onSignOut} style={{ fontFamily: F.label, fontSize: 11, color: T.textLight, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+              Sign out
+            </button>
+          </>
+        ) : (
+          <p style={{ fontFamily: F.label, fontSize: 11, color: T.textLight, margin: '0 0 8px' }}>Progress saves to this browser only. Sign in to sync across devices.</p>
+        )}
+        <span style={{ color: T.textLight, margin: '0 8px' }}>·</span>
+        <button onClick={() => { if (confirm('This will clear all your entries and progress on this device. This cannot be undone. Are you sure?')) { localStorage.removeItem(KEY); window.location.reload(); } }}
           style={{ fontFamily: F.label, fontSize: 11, color: T.textLight, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
-          Reset all progress
+          Reset progress
         </button>
       </div>
     </div>
@@ -422,13 +477,110 @@ function HomeView({ userData, onSelect }) {
 
 /* ── App ── */
 export default function App() {
-  const [userData, setUserData] = useState(load);
+  const [session, setSession] = useState(undefined); // undefined = loading, null = no session
+  const [access, setAccess] = useState(undefined); // undefined = checking, true/false = known
+  const [userData, setUserData] = useState(loadLocal);
   const [view, setView] = useState('home');
   const [currentDay, setCurrentDay] = useState(1);
+  const [syncing, setSyncing] = useState(false);
+  const saveTimer = useRef(null);
+
+  // Check for existing session on mount
+  useEffect(() => {
+    if (!supabase) { setSession(null); return; }
+    supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Check access + load cloud data when session changes
+  useEffect(() => {
+    if (!session?.user?.id) { setAccess(null); return; }
+
+    // Check access
+    fetch('/.netlify/functions/check-access', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: session.user.id }),
+    })
+      .then(r => r.json())
+      .then(d => setAccess(d.hasAccess))
+      .catch(() => setAccess(false));
+
+    // Load cloud data
+    setSyncing(true);
+    loadCloud(session.user.id).then(cloudData => {
+      if (cloudData) {
+        const merged = mergeData(loadLocal(), cloudData);
+        setUserData(merged);
+        saveLocal(merged);
+      }
+      setSyncing(false);
+    });
+  }, [session?.user?.id]);
+
+  // Check for Stripe success redirect
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('session_id')) {
+      // Payment just completed — recheck access after a short delay
+      setTimeout(() => {
+        if (session?.user?.id) {
+          fetch('/.netlify/functions/check-access', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: session.user.id }),
+          })
+            .then(r => r.json())
+            .then(d => setAccess(d.hasAccess));
+        }
+      }, 2000);
+      // Clean the URL
+      window.history.replaceState({}, '', '/');
+    }
+  }, [session?.user?.id]);
+
+  // Save with debounced cloud sync
+  const saveData = useCallback((next) => {
+    setUserData(next);
+    saveLocal(next);
+    if (session?.user?.id) {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => saveCloud(session.user.id, next), 1500);
+    }
+  }, [session?.user?.id]);
 
   const openDay = (dn) => { setCurrentDay(dn); setView('day'); window.scrollTo(0, 0); };
   const goHome = () => { setView('home'); window.scrollTo(0, 0); };
+  const handleSignOut = async () => {
+    if (supabase) await supabase.auth.signOut();
+    setSession(null);
+    setAccess(null);
+  };
+  const handleSignIn = (s) => {
+    setSession(s);
+  };
 
+  // Loading
+  if (session === undefined || (session && access === undefined)) {
+    return (
+      <div style={{ minHeight: '100vh', background: T.cream, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ fontFamily: F.label, fontSize: 14, color: T.textMid }}>Loading...</p>
+      </div>
+    );
+  }
+
+  // Not signed in
+  if (supabase && session === null) {
+    return <Auth onSignIn={handleSignIn} />;
+  }
+
+  // Signed in but no access — show paywall
+  if (supabase && session && !access) {
+    return <Paywall user={session.user} onSignOut={handleSignOut} />;
+  }
+
+  // Has access — show the workbook
   return (
     <div style={{ minHeight: '100vh', background: T.cream }}>
       <style>{`
@@ -442,8 +594,13 @@ export default function App() {
           h2 { font-size: 22px !important; }
         }
       `}</style>
-      {view === 'home' && <HomeView userData={userData} onSelect={openDay} />}
-      {view === 'day' && <DayView dayNum={currentDay} userData={userData} setUserData={setUserData} onHome={goHome} onNav={openDay} />}
+      {syncing && (
+        <div style={{ background: T.navy, padding: '6px 24px', textAlign: 'center' }}>
+          <span style={{ fontFamily: F.label, fontSize: 11, color: T.gold }}>Syncing your progress...</span>
+        </div>
+      )}
+      {view === 'home' && <HomeView userData={userData} onSelect={openDay} user={session?.user} onSignOut={handleSignOut} />}
+      {view === 'day' && <DayView dayNum={currentDay} userData={userData} setUserData={saveData} onHome={goHome} onNav={openDay} />}
     </div>
   );
 }
