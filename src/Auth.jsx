@@ -13,7 +13,7 @@ const F = {
 };
 
 export default function Auth({ onSignIn }) {
-  const [mode, setMode] = useState('login'); // login, signup, reset
+  const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -35,7 +35,7 @@ export default function Auth({ onSignIn }) {
     const { data, error: err } = await supabase.auth.signUp({ email, password });
     setLoading(false);
     if (err) { setError(err.message); return; }
-   if (data.session) {
+    if (data.session) {
       onSignIn(data.session);
     }
   };
@@ -52,7 +52,6 @@ export default function Auth({ onSignIn }) {
   return (
     <div style={{ minHeight: '100vh', background: T.cream, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div style={{ maxWidth: 400, width: '100%' }}>
-        {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: 36 }}>
           <div style={{ display: 'inline-block', background: T.navy, padding: '5px 16px', borderRadius: 20, marginBottom: 16 }}>
             <span style={{ fontFamily: F.label, fontSize: 10, fontWeight: 700, letterSpacing: 3, color: T.gold, textTransform: 'uppercase' }}>30-Day System</span>
@@ -65,7 +64,6 @@ export default function Auth({ onSignIn }) {
           </p>
         </div>
 
-        {/* Form */}
         <div style={{ background: T.white, borderRadius: 12, padding: 28, boxShadow: '0 2px 16px rgba(30,58,95,0.06)' }}>
           <form onSubmit={mode === 'login' ? handleLogin : mode === 'signup' ? handleSignup : handleReset}>
             <div style={{ marginBottom: 16 }}>
@@ -118,7 +116,6 @@ export default function Auth({ onSignIn }) {
             </button>
           </form>
 
-          {/* Mode switches */}
           <div style={{ marginTop: 20, textAlign: 'center' }}>
             {mode === 'login' && (
               <>
@@ -148,7 +145,6 @@ export default function Auth({ onSignIn }) {
           </div>
         </div>
 
-        {/* Privacy note */}
         <div style={{ textAlign: 'center', marginTop: 20 }}>
           <p style={{ fontFamily: F.label, fontSize: 11, color: T.textLight, margin: 0 }}>
             Your entries are encrypted and private. We never share your data.
